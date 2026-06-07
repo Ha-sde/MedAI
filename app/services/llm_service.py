@@ -1,193 +1,200 @@
 import os
-import json
 import re
-import anthropic
 
-client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY', ''))
+def analyze_transcript(transcript, patient_history=None, attachments_analysis=None):
+    text = transcript.strip()
+    text_lower = text.lower()
+    symptoms = _extract_symptoms(text_lower)
+    diagnosis = _extract_diagnosis(text_lower)
+    medications = _extract_medications(text)
+    vitals = _extract_vitals(text_lower)
+    severity = _determine_severity(text_lower, diagnosis, symptoms)
+    return {
+        "chief_complaint": _extract_chief_complaint(text, text_lower),
+        "symptoms": symptoms,
+        "diagnosis": diagnosis,
+        "medications": medications,
+        "vitals": vitals,
+        "lab_results": _extract_labs(text_lower),
+        "treatment_plan": _extract_treatment(text, text_lower),
+        "follow_up": _extract_followup(text_lower),
+        "notes": "",
+        "severity": severity,
+        "ai_analysis": _generate_analysis(symptoms, diagnosis, medications, vitals, severity, patient_history, attachments_analysis),
+    }
 
-EXTRACTION_SYSTEM = """You are a medical AI assistant specialized in clinical note analysis. 
-You extract structured information from doctor's spoken consultation notes.
-Always respond with valid JSON only. No markdown, no explanation, just raw JSON.
+SYMPTOM_KEYWORDS = [
+    "pain","ache","fever","cough","cold","headache","dizziness","nausea","vomiting",
+    "fatigue","weakness","breathlessness","shortness of breath","chest pain","back pain",
+    "stomach pain","abdominal pain","throat pain","ear pain","leg pain","joint pain",
+    "muscle pain","swelling","rash","itching","bleeding","diarrhea","constipation",
+    "loss of appetite","weight loss","insomnia","anxiety","palpitations","sweating",
+    "chills","burning","numbness","tingling","blurred vision","runny nose","wheezing",
+]
 
-Extract and return this exact structure:
-{
-  "chief_complaint": "primary reason for visit",
-  "symptoms": ["symptom1", "symptom2"],
-  "diagnosis": ["diagnosis1", "diagnosis2"],
-  "medications": ["Med 100mg twice daily", "Med2 50mg once daily"],
-  "vitals": {
-    "bp": "120/80",
-    "pulse": "72",
-    "temp": "98.6",
-    "spo2": "99",
-    "weight": "70kg",
-    "height": "170cm",
-    "respiratory_rate": "16"
-  },
-  "lab_results": {
-    "test_name": "value with unit"
-  },
-  "treatment_plan": "detailed treatment plan",
-  "follow_up": "follow up instructions and timeline",
-  "notes": "any additional clinical notes",
-  "severity": "low|medium|high|critical",
-  "ai_analysis": "clinical reasoning, differential diagnosis considerations, red flags if any, evidence-based recommendations"
+DIAGNOSIS_KEYWORDS = {
+    "Hypertension": ["hypertension","high blood pressure","htn","high bp"],
+    "Diabetes": ["diabetes","diabetic","sugar","type 2","type 1"],
+    "Fever": ["fever","pyrexia","febrile"],
+    "Viral Infection": ["viral","virus","flu","influenza"],
+    "Pneumonia": ["pneumonia","lung infection"],
+    "Bronchitis": ["bronchitis","bronchial"],
+    "Asthma": ["asthma","asthmatic"],
+    "GERD": ["gerd","acid reflux","reflux","heartburn"],
+    "Gastritis": ["gastritis","gastric","peptic"],
+    "Urinary Tract Infection": ["uti","urinary tract","cystitis"],
+    "Anemia": ["anemia","anaemia","low hemoglobin"],
+    "Thyroid Disorder": ["thyroid","hypothyroid","hyperthyroid"],
+    "Arthritis": ["arthritis","rheumatoid","osteoarthritis"],
+    "Migraine": ["migraine","cluster headache"],
+    "Malaria": ["malaria"],
+    "Dengue": ["dengue"],
+    "Typhoid": ["typhoid","enteric fever"],
+    "COVID-19": ["covid","covid-19","coronavirus"],
 }
 
-If a field is not mentioned, use empty string or empty array. For severity:
-- low: routine checkup, minor issues
-- medium: manageable chronic conditions, moderate symptoms  
-- high: serious conditions requiring close monitoring
-- critical: emergency or life-threatening conditions"""
+VITALS_PATTERNS = {
+    "bp": [r'(?:bp|blood pressure)\s*[:\-]?\s*(\d{2,3}\s*/\s*\d{2,3})'],
+    "pulse": [r'(?:pulse|heart rate|hr)\s*[:\-]?\s*(\d{2,3})\s*(?:bpm)?'],
+    "temp": [r'(?:temp(?:erature)?)\s*[:\-]?\s*(\d{2,3}(?:\.\d)?)'],
+    "spo2": [r'(?:spo2|oxygen saturation|o2 sat)\s*[:\-]?\s*(\d{2,3})\s*%?'],
+    "weight": [r'(?:weight|wt)\s*[:\-]?\s*(\d{2,3}(?:\.\d+)?)\s*(?:kg|lbs?)'],
+    "height": [r'(?:height|ht)\s*[:\-]?\s*(\d{2,3}(?:\.\d+)?)\s*(?:cm|ft)?'],
+}
 
-IMAGE_ANALYSIS_SYSTEM = """You are a medical imaging AI assistant. Analyze the provided medical image (X-ray, MRI, CT scan, lab report, etc.) and provide:
-1. Image type identification
-2. Key findings
-3. Abnormalities if any
-4. Clinical significance
-5. Recommendations
+SEVERITY_RULES = {
+    "critical": ["emergency","critical","heart attack","stroke","unconscious","cardiac arrest"],
+    "high": ["severe","serious","hospital admission","difficulty breathing","pneumonia","sepsis","acute"],
+    "medium": ["moderate","chronic","hypertension","diabetes","infection","bronchitis","asthma"],
+    "low": ["mild","routine","checkup","follow up","cold","minor","general"],
+}
 
-Respond in JSON format:
-{
-  "image_type": "X-ray chest / MRI brain / etc",
-  "findings": ["finding1", "finding2"],
-  "abnormalities": ["abnormality1"],
-  "clinical_significance": "explanation",
-  "recommendations": ["recommendation1"]
-}"""
+def _extract_chief_complaint(text, text_lower):
+    patterns = [
+        r'(?:presenting with|complains? of|presents? with|c/o)\s+([^.]{10,120})',
+        r'(?:chief complaint|main complaint)\s*[:\-]?\s*([^.]{10,120})',
+    ]
+    for pat in patterns:
+        m = re.search(pat, text_lower)
+        if m:
+            return m.group(1).strip().rstrip('.,')[:200]
+    first = text.split('.')[0].strip()
+    return first[:200] if len(first) > 10 else "General consultation"
 
-def analyze_transcript(transcript: str, patient_history: list = None, attachments_analysis: list = None) -> dict:
-    """Analyze doctor's transcript using Claude with full reasoning."""
-    
-    history_context = ""
-    if patient_history:
-        recent = patient_history[-5:]  # Last 5 consultations
-        history_context = f"\n\nPATIENT HISTORY CONTEXT (last {len(recent)} visits):\n"
-        for h in recent:
-            history_context += f"- {h.get('date', 'Unknown date')}: Diagnosis: {h.get('diagnosis', [])}, Medications: {h.get('medications', [])}\n"
-    
-    attachment_context = ""
-    if attachments_analysis:
-        attachment_context = "\n\nIMAGING/REPORT ANALYSIS:\n"
-        for a in attachments_analysis:
-            attachment_context += f"- {json.dumps(a)}\n"
-    
-    user_message = f"""Analyze this doctor's consultation note and extract structured medical information.
+def _extract_symptoms(text_lower):
+    found = []
+    for sym in SYMPTOM_KEYWORDS:
+        if re.search(r'\b' + re.escape(sym) + r'\b', text_lower):
+            if not any(sym in e.lower() for e in found):
+                found.append(sym.title())
+    return list(dict.fromkeys(found))[:10]
 
-DOCTOR'S TRANSCRIPT:
-{transcript}
-{history_context}
-{attachment_context}
-
-Extract all medical information and provide comprehensive clinical analysis."""
-
-    try:
-        response = client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=4000,
-            thinking={
-                "type": "enabled",
-                "budget_tokens": 2000
-            },
-            system=EXTRACTION_SYSTEM,
-            messages=[{"role": "user", "content": user_message}]
-        )
-        
-        # Extract text from response
-        result_text = ""
-        for block in response.content:
-            if block.type == "text":
-                result_text = block.text
+def _extract_diagnosis(text_lower):
+    found = []
+    for diag_name, keywords in DIAGNOSIS_KEYWORDS.items():
+        for kw in keywords:
+            if re.search(r'\b' + re.escape(kw) + r'\b', text_lower):
+                if diag_name not in found:
+                    found.append(diag_name)
                 break
-        
-        # Parse JSON
-        result_text = result_text.strip()
-        if result_text.startswith('```'):
-            result_text = re.sub(r'```json?\n?', '', result_text)
-            result_text = result_text.rstrip('`').strip()
-        
-        return json.loads(result_text)
-    
-    except Exception as e:
-        print(f"[LLM Error] {e}")
-        # Fallback basic extraction
-        return _basic_extraction(transcript)
+    return list(dict.fromkeys(found))[:8]
 
-def analyze_image(image_data: bytes, media_type: str) -> dict:
-    """Analyze medical image using Claude vision."""
-    import base64
-    
-    try:
-        img_b64 = base64.standard_b64encode(image_data).decode('utf-8')
-        
-        response = client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=1500,
-            system=IMAGE_ANALYSIS_SYSTEM,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": img_b64
-                        }
-                    },
-                    {"type": "text", "text": "Analyze this medical image and provide structured findings."}
-                ]
-            }]
-        )
-        
-        result_text = response.content[0].text.strip()
-        if result_text.startswith('```'):
-            result_text = re.sub(r'```json?\n?', '', result_text)
-            result_text = result_text.rstrip('`').strip()
-        
-        return json.loads(result_text)
-    
-    except Exception as e:
-        print(f"[Image Analysis Error] {e}")
-        return {"image_type": "Unknown", "findings": [], "abnormalities": [], "clinical_significance": "Analysis unavailable", "recommendations": []}
+def _extract_medications(text):
+    found = []
+    for m in re.finditer(r'\b([A-Z][a-zA-Z]{3,})\s+(\d+(?:\.\d+)?\s*(?:mg|mcg|ml|g|iu))\s*([\w\s]{3,30}?)(?=\.|,|\n|$)', text):
+        entry = f"{m.group(1)} {m.group(2)} {m.group(3).strip()}".strip()
+        if entry not in found:
+            found.append(entry)
+    return list(dict.fromkeys(found))[:10]
 
-def generate_summary_narrative(patient_data: dict, stats: dict) -> str:
-    """Generate a narrative health summary for the patient."""
-    
-    prompt = f"""Based on this patient's medical history, write a comprehensive clinical summary in 3-4 paragraphs.
+def _extract_vitals(text_lower):
+    vitals = {}
+    for vital_name, patterns in VITALS_PATTERNS.items():
+        for pat in patterns:
+            m = re.search(pat, text_lower)
+            if m:
+                vitals[vital_name] = m.group(1).strip()
+                break
+    return vitals
 
-Patient: {patient_data.get('name')}, {patient_data.get('age')} year old {patient_data.get('gender')}
-Total Visits: {stats.get('total_visits')}
-Most Common Diagnoses: {stats.get('most_common_diagnoses')}
-Most Common Symptoms: {stats.get('most_common_symptoms')}
-Current Medications: {stats.get('most_prescribed_medications')}
-Severity Distribution: {stats.get('severity_distribution')}
-Health Score: {stats.get('health_score')}/100
+def _extract_labs(text_lower):
+    labs = {}
+    for pat, name in [
+        (r'(?:hb|hemoglobin)\s*[:\-]?\s*([\d.]+)', 'hemoglobin'),
+        (r'(?:blood sugar|fbs|rbs|glucose)\s*[:\-]?\s*([\d.]+)', 'blood_sugar'),
+        (r'(?:hba1c)\s*[:\-]?\s*([\d.]+)', 'hba1c'),
+    ]:
+        m = re.search(pat, text_lower)
+        if m:
+            labs[name] = m.group(1)
+    return labs
 
-Write a professional clinical summary covering: overall health trajectory, key conditions, treatment patterns, and health recommendations."""
+def _extract_treatment(text, text_lower):
+    for pat in [r'(?:treatment|plan|management|advice)[:\-]?\s*([^.]{20,300})',
+                r'(?:advised|recommended)\s+([^.]{20,200})']:
+        m = re.search(pat, text_lower)
+        if m:
+            return m.group(1).strip().capitalize()
+    sentences = [s.strip() for s in text.split('.') if len(s.strip()) > 20]
+    return '. '.join(sentences[-2:]) if sentences else "As per consultation."
 
-    try:
-        response = client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=800,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.content[0].text
-    except:
-        return "Summary generation requires API connection."
+def _extract_followup(text_lower):
+    for pat in [r'(?:follow[\s\-]?up|review|come back)\s+(?:in|after)?\s*([\w\s]+?)(?:\.|,|$)',
+                r'(?:after|in)\s+(\d+\s*(?:days?|weeks?|months?))']:
+        m = re.search(pat, text_lower)
+        if m:
+            return f"Follow up {m.group(1).strip()}"
+    return "Follow up as advised" if 'follow' in text_lower else ""
 
-def _basic_extraction(transcript: str) -> dict:
-    """Fallback basic extraction without LLM."""
-    return {
-        "chief_complaint": "See transcript",
-        "symptoms": [],
-        "diagnosis": [],
-        "medications": [],
-        "vitals": {},
-        "lab_results": {},
-        "treatment_plan": transcript,
-        "follow_up": "",
-        "notes": "",
-        "severity": "medium",
-        "ai_analysis": "Manual review required - LLM analysis unavailable."
+def _determine_severity(text_lower, diagnosis, symptoms):
+    for level in ["critical", "high", "medium", "low"]:
+        for kw in SEVERITY_RULES[level]:
+            if kw in text_lower:
+                return level
+    for d in [x.lower() for x in diagnosis]:
+        if any(s in d for s in ['pneumonia','sepsis','cardiac','cancer']): return "high"
+        if any(s in d for s in ['hypertension','diabetes','asthma','uti','anemia']): return "medium"
+    return "low" if len(symptoms) <= 2 else "medium"
+
+def _generate_analysis(symptoms, diagnosis, medications, vitals, severity, patient_history, attachments_analysis):
+    lines = ["CLINICAL SUMMARY (MedAI NLP Engine)", "=" * 40]
+    if diagnosis:
+        lines.append(f"\nASSESSMENT: {', '.join(diagnosis)}")
+    if symptoms:
+        lines.append(f"\nSYMPTOMS: {', '.join(symptoms)}")
+    if vitals:
+        bp = vitals.get('bp', '').replace(' ', '')
+        if bp and '/' in bp:
+            try:
+                s, d = map(int, bp.split('/'))
+                status = "ELEVATED" if s >= 140 or d >= 90 else "Normal"
+                lines.append(f"\nBP {bp} mmHg — {status}")
+            except: pass
+    if medications:
+        lines.append(f"\nMEDICATIONS: {len(medications)} prescribed")
+    if patient_history:
+        lines.append(f"\nHISTORY: {len(patient_history)} previous consultation(s) on record")
+    sev_notes = {
+        "critical": "CRITICAL — Immediate intervention required.",
+        "high": "HIGH — Close monitoring needed.",
+        "medium": "MODERATE — Regular monitoring important.",
+        "low": "LOW — Routine management.",
     }
+    lines.append(f"\nSEVERITY: {sev_notes.get(severity, '')}")
+    lines.append("\n" + "─" * 40)
+    lines.append("MedAI Rule-Based NLP — No API required.")
+    return "\n".join(lines)
+
+def analyze_image(image_data, media_type):
+    return {
+        "image_type": "Medical Image",
+        "findings": ["Image attached to consultation"],
+        "abnormalities": [],
+        "clinical_significance": "Manual review required.",
+        "recommendations": ["Review image manually"]
+    }
+
+def generate_summary_narrative(patient_data, stats):
+    name = patient_data.get('name', 'Patient')
+    visits = stats.get('total_visits', 0)
+    return f"{name} has {visits} recorded consultation(s) on MedAI."
