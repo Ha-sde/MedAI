@@ -1,0 +1,25 @@
+version: '3.9'
+
+services:
+  medai:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SECRET_KEY=${SECRET_KEY:-medai-secret-change-me}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-medai-jwt-secret}
+      - DATABASE_URL=sqlite:////app/data/medai.db
+    volumes:
+      - medai_data:/app/data
+      - medai_uploads:/app/uploads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  medai_data:
+  medai_uploads:

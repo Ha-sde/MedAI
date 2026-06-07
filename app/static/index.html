@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MedAI – Clinical Intelligence Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Splash loader -->
+    <div id="splash" class="splash">
+      <div class="splash-inner">
+        <div class="splash-logo">
+          <span class="logo-med">Med</span><span class="logo-ai">AI</span>
+        </div>
+        <div class="splash-bar"><div class="splash-fill"></div></div>
+        <p class="splash-sub">Clinical Intelligence Platform</p>
+      </div>
+    </div>
+
+    <!-- ── LOGIN PAGE ── -->
+    <div id="page-login" class="page hidden">
+      <div class="login-bg">
+        <div class="login-grid"></div>
+        <div class="login-orb orb1"></div>
+        <div class="login-orb orb2"></div>
+      </div>
+      <div class="login-card">
+        <div class="login-brand">
+          <span class="logo-med">Med</span><span class="logo-ai">AI</span>
+          <p class="brand-tagline">Clinical Intelligence Platform</p>
+        </div>
+        
+        <div id="login-step-phone" class="login-step">
+          <h2 class="login-title">Welcome Back</h2>
+          <p class="login-sub">Enter your registered mobile number</p>
+          <div class="input-group">
+            <span class="input-icon">📱</span>
+            <input type="tel" id="login-phone" class="inp" placeholder="+91 98765 43210" maxlength="15" />
+          </div>
+          <button class="btn btn-primary" onclick="sendOTP()">Send OTP</button>
+          <p class="login-divider">New patient? <a href="#" onclick="showPage('register')">Register here</a></p>
+        </div>
+
+        <div id="login-step-otp" class="login-step hidden">
+          <h2 class="login-title">Verify OTP</h2>
+          <p class="login-sub">Enter the 6-digit code sent to your number</p>
+          <div class="otp-inputs" id="otp-boxes">
+            <input class="otp-box" maxlength="1" type="text" inputmode="numeric" />
+            <input class="otp-box" maxlength="1" type="text" inputmode="numeric" />
+            <input class="otp-box" maxlength="1" type="text" inputmode="numeric" />
+            <input class="otp-box" maxlength="1" type="text" inputmode="numeric" />
+            <input class="otp-box" maxlength="1" type="text" inputmode="numeric" />
+            <input class="otp-box" maxlength="1" type="text" inputmode="numeric" />
+          </div>
+          <div id="otp-hint" class="otp-hint"></div>
+          <button class="btn btn-primary" onclick="verifyOTP()">Verify & Login</button>
+          <p class="login-divider"><a href="#" onclick="showLoginStep('phone')">← Change number</a></p>
+        </div>
+
+        <div class="login-status" id="login-status"></div>
+      </div>
+    </div>
+
+    <!-- ── REGISTER PAGE ── -->
+    <div id="page-register" class="page hidden">
+      <div class="login-bg">
+        <div class="login-grid"></div>
+        <div class="login-orb orb1"></div>
+        <div class="login-orb orb2"></div>
+      </div>
+      <div class="login-card register-card">
+        <div class="login-brand">
+          <span class="logo-med">Med</span><span class="logo-ai">AI</span>
+          <p class="brand-tagline">Create Patient Account</p>
+        </div>
+        <div class="register-grid">
+          <div class="input-group"><input class="inp" id="reg-name" placeholder="Full Name *" /></div>
+          <div class="input-group"><input class="inp" id="reg-phone" placeholder="Mobile Number *" type="tel" /></div>
+          <div class="input-group">
+            <select class="inp" id="reg-gender">
+              <option value="">Gender</option>
+              <option>Male</option><option>Female</option><option>Other</option>
+            </select>
+          </div>
+          <div class="input-group"><input class="inp" id="reg-age" placeholder="Age" type="number" min="0" max="150" /></div>
+          <div class="input-group"><input class="inp" id="reg-email" placeholder="Email Address" type="email" /></div>
+          <div class="input-group">
+            <select class="inp" id="reg-blood">
+              <option value="">Blood Group</option>
+              <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+              <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+            </select>
+          </div>
+          <div class="input-group full"><input class="inp" id="reg-address" placeholder="Address" /></div>
+          <div class="input-group full"><input class="inp" id="reg-allergies" placeholder="Known Allergies (optional)" /></div>
+        </div>
+        <button class="btn btn-primary" onclick="registerPatient()">Create Account</button>
+        <p class="login-divider"><a href="#" onclick="showPage('login')">← Back to Login</a></p>
+        <div class="login-status" id="reg-status"></div>
+      </div>
+    </div>
+
+    <!-- ── MAIN APP ── -->
+    <div id="page-app" class="page hidden">
+      <div class="app-shell">
+
+        <!-- Right Panel -->
+        <aside class="side-panel" id="side-panel">
+          <div class="panel-brand">
+            <span class="logo-med">Med</span><span class="logo-ai">AI</span>
+          </div>
+          
+          <!-- Patient info -->
+          <div class="patient-card" id="patient-card">
+            <div class="patient-avatar" id="patient-avatar">
+              <span id="patient-initials">?</span>
+            </div>
+            <div class="patient-info">
+              <div class="patient-name" id="patient-name">Loading...</div>
+              <div class="patient-meta" id="patient-meta">—</div>
+            </div>
+          </div>
+
+          <nav class="panel-nav">
+            <button class="nav-btn active" id="nav-home" onclick="navTo('home')">
+              <span class="nav-icon">⚕</span> Console
+            </button>
+            <button class="nav-btn" id="nav-history" onclick="navTo('history')">
+              <span class="nav-icon">📋</span> History
+            </button>
+            <button class="nav-btn" id="nav-summary" onclick="navTo('summary')">
+              <span class="nav-icon">📊</span> Summary
+            </button>
+          </nav>
+
+          <button class="logout-btn" onclick="logout()">
+            <span>⏻</span> Logout
+          </button>
+        </aside>
+
+        <!-- Main content area -->
+        <main class="app-main">
+
+          <!-- Console view -->
+          <div id="view-home" class="view active">
+            <div class="console-area" id="console-area">
+              <div class="console-welcome" id="console-welcome">
+                <div class="welcome-icon">⚕</div>
+                <h1>MedAI Console</h1>
+                <p>Speak or type the consultation notes. Upload X-rays, reports, or images. MedAI will analyze, structure, and generate a complete clinical report.</p>
+                <div class="feature-pills">
+                  <span class="pill">🎙 Voice Recognition</span>
+                  <span class="pill">🧠 AI Analysis</span>
+                  <span class="pill">📄 Auto PDF Report</span>
+                  <span class="pill">🖼 Image Analysis</span>
+                </div>
+              </div>
+
+              <!-- Live transcript display -->
+              <div class="transcript-display hidden" id="transcript-display">
+                <div class="transcript-header">
+                  <span class="rec-dot active"></span>
+                  <span>Recording consultation...</span>
+                </div>
+                <div class="transcript-text" id="transcript-text"></div>
+              </div>
+
+              <!-- Messages / Results -->
+              <div id="messages-area"></div>
+
+              <!-- Processing indicator -->
+              <div class="processing hidden" id="processing">
+                <div class="proc-pulse"></div>
+                <span>Analyzing with MedAI...</span>
+              </div>
+            </div>
+
+            <!-- Attached files preview -->
+            <div class="attachments-bar hidden" id="attachments-bar">
+              <div class="att-list" id="att-list"></div>
+            </div>
+
+            <!-- Input bar -->
+            <div class="input-bar">
+              <label class="bar-btn upload-btn" for="file-upload" title="Upload X-ray / Report">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+              </label>
+              <input type="file" id="file-upload" multiple accept="image/*,.pdf" style="display:none" onchange="handleFiles(this)">
+              
+              <div class="bar-input-wrap">
+                <textarea id="main-input" class="bar-input" placeholder="Type consultation notes, or use the mic to speak..." rows="1"
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitConsultation()}"
+                  oninput="autoResize(this)"></textarea>
+              </div>
+
+              <button class="bar-btn mic-btn" id="mic-btn" onclick="toggleRecording()" title="Record speech">
+                <svg id="mic-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+              </button>
+
+              <button class="bar-btn send-btn" onclick="submitConsultation()" title="Submit">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- History view -->
+          <div id="view-history" class="view hidden">
+            <div class="view-header">
+              <h2>Consultation History</h2>
+              <span class="view-badge" id="history-count">0 records</span>
+            </div>
+            <div class="history-list" id="history-list">
+              <div class="empty-state">No consultations recorded yet.</div>
+            </div>
+          </div>
+
+          <!-- Summary view -->
+          <div id="view-summary" class="view hidden">
+            <div class="view-header">
+              <h2>Patient Summary</h2>
+              <span class="view-badge" id="summary-badge">Analytics</span>
+            </div>
+            <div id="summary-content" class="summary-content">
+              <div class="empty-state">Loading summary...</div>
+            </div>
+          </div>
+
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
