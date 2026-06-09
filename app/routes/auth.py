@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token
 from app import db
 from app.models import Patient, OTPRecord
+from app.services.sms_service import send_otp_sms
 from datetime import datetime, timedelta
 import random
 import string
@@ -34,14 +35,23 @@ def send_otp():
     db.session.add(otp_record)
     db.session.commit()
     
-    # In production, send via SMS gateway (Twilio, etc.)
-    print(f"[OTP] Phone: {phone} | OTP: {otp}")
+    # Send SMS OTP via Twilio
+    sms_sent = send_otp_sms(phone, otp)
     
-    return jsonify({
-        'message': 'OTP sent successfully',
-        'otp': otp,  # Remove in production
-        'expires_in': 600
-    })
+    if sms_sent:
+        print(f"[OTP] Phone: {phone} (SMS sent successfully via Twilio)")
+        return jsonify({
+            'message': 'OTP sent successfully',
+            'expires_in': 600
+        })
+    else:
+        # Fallback to demo mode if Twilio is not configured
+        print(f"[OTP] Phone: {phone} | OTP: {otp} (Demo Mode fallback)")
+        return jsonify({
+            'message': 'OTP sent successfully (Demo Mode)',
+            'otp': otp,
+            'expires_in': 600
+        })
 
 @auth_bp.route('/verify-otp', methods=['POST'])
 def verify_otp():

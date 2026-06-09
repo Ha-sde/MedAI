@@ -84,6 +84,8 @@ async function sendOTP() {
     const res = await apiFetch('/api/auth/send-otp', 'POST', { phone });
     if (res.otp) {
       document.getElementById('otp-hint').textContent = `Demo OTP: ${res.otp}`;
+    } else {
+      document.getElementById('otp-hint').textContent = `Verification code sent to your phone.`;
     }
     setStatus('login-status', 'OTP sent!', 'success');
     showLoginStep('otp');
