@@ -4,6 +4,9 @@ from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 from flask_socketio import SocketIO
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 db = SQLAlchemy()
 jwt = JWTManager()
