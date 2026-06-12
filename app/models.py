@@ -81,23 +81,36 @@ class Consultation(db.Model):
     doctor_name = db.Column(db.String(100), default='Dr. Attending')
 
     def to_dict(self):
+        def safe_json_load(val, default_type=list):
+            if not val:
+                return default_type()
+            if isinstance(val, (list, dict)):
+                return val
+            try:
+                return json.loads(val)
+            except Exception:
+                if default_type == list and isinstance(val, str):
+                    # Fallback for old comma-separated entries
+                    return [x.strip() for x in val.split(',') if x.strip()]
+                return default_type()
+
         return {
             'id': self.id,
             'patient_id': self.patient_id,
             'date': self.date.isoformat() if self.date else None,
             'raw_transcript': self.raw_transcript,
             'chief_complaint': self.chief_complaint,
-            'symptoms': json.loads(self.symptoms) if self.symptoms else [],
-            'diagnosis': json.loads(self.diagnosis) if self.diagnosis else [],
-            'medications': json.loads(self.medications) if self.medications else [],
-            'vitals': json.loads(self.vitals) if self.vitals else {},
-            'lab_results': json.loads(self.lab_results) if self.lab_results else {},
+            'symptoms': safe_json_load(self.symptoms, list),
+            'diagnosis': safe_json_load(self.diagnosis, list),
+            'medications': safe_json_load(self.medications, list),
+            'vitals': safe_json_load(self.vitals, dict),
+            'lab_results': safe_json_load(self.lab_results, dict),
             'treatment_plan': self.treatment_plan,
             'follow_up': self.follow_up,
             'notes': self.notes,
             'ai_analysis': self.ai_analysis,
             'severity': self.severity,
-            'attachments': json.loads(self.attachments) if self.attachments else [],
+            'attachments': safe_json_load(self.attachments, list),
             'pdf_path': self.pdf_path,
             'doctor_name': self.doctor_name
         }

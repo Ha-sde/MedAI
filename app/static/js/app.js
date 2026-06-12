@@ -448,9 +448,13 @@ async function loadHistory() {
     }
     
     list.innerHTML = data.map(c => {
-      const diags = (c.diagnosis || []).slice(0, 3).join(', ') || 'General Checkup';
-      const syms = (c.symptoms || []).slice(0, 3);
-      const meds = (c.medications || []).slice(0, 2);
+      const diagsArr = Array.isArray(c.diagnosis) ? c.diagnosis : [];
+      const symsArr = Array.isArray(c.symptoms) ? c.symptoms : [];
+      const medsArr = Array.isArray(c.medications) ? c.medications : [];
+      
+      const diags = diagsArr.slice(0, 3).join(', ') || 'General Checkup';
+      const syms = symsArr.slice(0, 3);
+      const meds = medsArr.slice(0, 2);
       const date = c.date ? new Date(c.date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '—';
       const sev = c.severity || 'medium';
       
@@ -474,9 +478,9 @@ async function loadHistory() {
               <h4>Chief Complaint</h4>
               <p>${c.chief_complaint || '—'}</p>
               <h4>All Diagnoses</h4>
-              <p>${(c.diagnosis || []).join(', ') || '—'}</p>
+              <p>${diagsArr.join(', ') || '—'}</p>
               <h4>Medications</h4>
-              <p>${(c.medications || []).join(' · ') || '—'}</p>
+              <p>${medsArr.join(' · ') || '—'}</p>
               <h4>Treatment Plan</h4>
               <p>${c.treatment_plan || '—'}</p>
               ${c.ai_analysis ? `<h4>AI Analysis</h4><div class="ai-analysis-box" style="font-size:12px">${c.ai_analysis.slice(0,300)}${c.ai_analysis.length>300?'...':''}</div>` : ''}
