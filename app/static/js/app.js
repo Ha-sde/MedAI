@@ -7,6 +7,7 @@ let selectedFiles = [];
 let isRecording = false;
 let recognition = null;
 let fullTranscript = '';
+let currentDraftConsultation = null;
 
 /* ── Startup ─────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
@@ -274,11 +275,18 @@ function startRecording() {
 function stopRecording() {
   isRecording = false;
   document.getElementById('mic-btn').classList.remove('recording');
+  document.getElementById('transcript-display').classList.add('hidden');
   try { recognition.stop(); } catch(e) {}
   
   // Move transcript to input
   const final = fullTranscript.trim();
   if (final) document.getElementById('main-input').value = final;
+  
+  // Restore welcome console if the input is empty
+  const currentVal = document.getElementById('main-input').value.trim();
+  if (!currentVal) {
+    document.getElementById('console-welcome').classList.remove('hidden');
+  }
 }
 
 /* ── Submit Consultation ─────────────────────────────── */
@@ -313,6 +321,7 @@ async function submitConsultation() {
     if (!res.ok) throw await res.json();
     const data = await res.json();
     
+    currentDraftConsultation = data;
     renderResult(data, transcript);
     selectedFiles = [];
     renderAttachments();
@@ -382,10 +391,17 @@ function renderResult(data, transcript) {
         </div>` : ''}
       </div>
       
-      ${data.id ? `
-      <button class="pdf-btn" onclick="downloadPDF(${data.id})">
-        📄 Download PDF Report
-      </button>` : ''}
+      <div class="card-actions-area" style="margin-top: 20px;">
+        ${data.id ? `
+          <button class="pdf-btn" onclick="downloadPDF(${data.id})">
+            📄 Download PDF Report
+          </button>
+        ` : `
+          <button class="pdf-btn" id="save-history-btn" onclick="saveCurrentDraft(this)">
+            📋 Add to History
+          </button>
+        `}
+      </div>
     </div>
   `;
   
@@ -513,32 +529,11 @@ async function loadSummary() {
     const healthScore = stats.health_score || 0;
     const scoreColor = healthScore >= 70 ? 'var(--green)' : healthScore >= 40 ? 'var(--orange)' : 'var(--red)';
     
-    // Monthly chart
-    const monthly = stats.monthly_visits || {};
-    const monthMax = Math.max(...Object.values(monthly), 1);
-    const monthBars = Object.entries(monthly).map(([m, v]) => `
-      <div class="bar-row">
-        <div class="bar-label">${m}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${(v/monthMax)*100}%"></div></div>
-        <div class="bar-val">${v}</div>
-      </div>
-    `).join('');
-    
-    // Top diagnoses chart
-    const topDiag = (stats.most_common_diagnoses || []).slice(0, 5);
-    const diagMax = topDiag.length ? topDiag[0][1] : 1;
-    const diagBars = topDiag.map(([name, count]) => `
-      <div class="bar-row">
-        <div class="bar-label" title="${name}">${name.length > 18 ? name.slice(0,15)+'...' : name}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${(count/diagMax)*100}%;background:linear-gradient(90deg,#ff6600,#ffaa00)"></div></div>
-        <div class="bar-val">${count}</div>
-      </div>
-    `).join('') || '<p style="color:var(--text3);font-size:13px">No data</p>';
-    
-    // Severity
-    const sevDist = stats.severity_distribution || {};
-    const sevTotal = Object.values(sevDist).reduce((a, b) => a + b, 0) || 1;
-    const sevColors = { low: '#00ff88', medium: '#ffaa00', high: '#ff6600', critical: '#ff0000' };
+    // Top medications pills
+    const medsList = stats.most_prescribed_medications || [];
+    const medsHtml = medsList.map(([m, c]) => 
+      `<span class="tag">${m.split(' ')[0]} <strong style="color:var(--accent)">(×${c})</strong></span>`
+    ).join('');
     
     // Recent timeline
     const recent = data.recent_consultations || [];
@@ -569,11 +564,11 @@ async function loadSummary() {
         </div>
         <div class="stat-card">
           <div class="stat-number" style="color:var(--green)">${stats.total_medications || 0}</div>
-          <div class="stat-label">Medications Used</div>
+          <div class="stat-label">Medications Prescribed</div>
         </div>
       </div>
 
-      <!-- Patient info -->
+      <!-- Patient Profile Info -->
       <div class="summary-section">
         <h3>Patient Profile</h3>
         <div class="chart-wrap" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
@@ -586,71 +581,235 @@ async function loadSummary() {
         </div>
       </div>
 
-      <!-- Severity distribution -->
+      <!-- Clinical AI Synthesis -->
       <div class="summary-section">
-        <h3>Severity Distribution</h3>
-        <div class="chart-wrap">
-          <div class="bar-chart">
-            ${Object.entries(sevDist).map(([sev, count]) => `
-              <div class="bar-row">
-                <div class="bar-label" style="text-transform:capitalize">${sev}</div>
-                <div class="bar-track"><div class="bar-fill" style="width:${(count/sevTotal)*100}%;background:${sevColors[sev]}"></div></div>
-                <div class="bar-val">${count}</div>
-              </div>
-            `).join('')}
+        <h3>Clinical Synthesis Assessment</h3>
+        <div class="ai-analysis-box" style="font-size: 13.5px; border-left: 4px solid var(--accent); line-height: 1.7; white-space: pre-line;">
+          ${stats.clinical_synthesis || 'Clinical assessment history not compiled yet.'}
+        </div>
+      </div>
+
+      <!-- Health Score Trend & Vitals Line Chart -->
+      <div class="summary-section">
+        <h3>Health Index & Vitals Trends</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+          <div class="chart-wrap">
+            <div class="chart-title" style="margin-bottom: 12px; font-weight:600;">Health Index Evolution</div>
+            <div style="position: relative; height: 200px; width: 100%;">
+              <canvas id="healthScoreChart"></canvas>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <div class="chart-title" style="margin-bottom: 12px; font-weight:600;">Vitals History Tracking</div>
+            <div style="position: relative; height: 200px; width: 100%;">
+              <canvas id="vitalsChart"></canvas>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Monthly visits -->
-      ${monthBars ? `
+      <!-- Diagnosis Distribution & Severity Chart -->
       <div class="summary-section">
-        <h3>Monthly Visits</h3>
-        <div class="chart-wrap">
-          <div class="bar-chart">${monthBars}</div>
-        </div>
-      </div>` : ''}
-
-      <!-- Top conditions -->
-      <div class="summary-section">
-        <h3>Most Common Conditions</h3>
-        <div class="chart-wrap">
-          <div class="bar-chart">${diagBars}</div>
+        <h3>Clinical Metrics & Distributions</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+          <div class="chart-wrap">
+            <div class="chart-title" style="margin-bottom: 12px; font-weight:600;">Diagnosis Distribution</div>
+            <div style="position: relative; height: 200px; width: 100%;">
+              <canvas id="diagnosisChart"></canvas>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <div class="chart-title" style="margin-bottom: 12px; font-weight:600;">Consultation Severity Breakdown</div>
+            <div style="position: relative; height: 200px; width: 100%;">
+              <canvas id="severityChart"></canvas>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Top medications -->
-      ${(stats.most_prescribed_medications || []).length ? `
-      <div class="summary-section">
-        <h3>Most Prescribed Medications</h3>
-        <div class="chart-wrap">
-          <div class="history-tags">
-            ${stats.most_prescribed_medications.map(([m, c]) => 
-              `<span class="tag">${m.split(' ')[0]} <strong style="color:var(--accent)">(×${c})</strong></span>`
-            ).join('')}
+      <!-- Medications & Timeline -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+        <!-- Top medications -->
+        ${medsHtml ? `
+        <div class="summary-section">
+          <h3>Most Prescribed Medications</h3>
+          <div class="chart-wrap" style="min-height: 140px;">
+            <div class="history-tags">${medsHtml}</div>
           </div>
-        </div>
-      </div>` : ''}
+        </div>` : ''}
 
-      <!-- Recent timeline -->
-      <div class="summary-section">
-        <h3>Recent Consultations</h3>
-        <div class="chart-wrap">
-          <div class="timeline">${timelineHtml}</div>
+        <!-- Recent timeline -->
+        <div class="summary-section">
+          <h3>Consultation Timeline</h3>
+          <div class="chart-wrap">
+            <div class="timeline">${timelineHtml}</div>
+          </div>
         </div>
       </div>
     `;
     
-    // Animate bars
-    setTimeout(() => {
-      document.querySelectorAll('.bar-fill').forEach(b => {
-        const w = b.style.width;
-        b.style.width = '0';
-        setTimeout(() => { b.style.width = w; }, 100);
-      });
-    }, 100);
+    // Draw Charts using Chart.js
+    
+    // 1. Health Score Evolution Line Chart
+    const hsData = stats.health_score_history || [];
+    const hsLabels = hsData.map(h => h.date);
+    const hsScores = hsData.map(h => h.score);
+    
+    new Chart(document.getElementById('healthScoreChart'), {
+      type: 'line',
+      data: {
+        labels: hsLabels,
+        datasets: [{
+          label: 'Health Score',
+          data: hsScores,
+          borderColor: '#00d4ff',
+          backgroundColor: 'rgba(0, 212, 255, 0.1)',
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#00d4ff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { min: 0, max: 100, grid: { color: '#2a2a42' }, ticks: { color: '#9090aa' } },
+          x: { grid: { color: 'transparent' }, ticks: { color: '#9090aa' } }
+        }
+      }
+    });
+
+    // 2. Vitals History Tracking Multi-line Chart
+    const vHistory = stats.vitals_history || [];
+    const vLabels = vHistory.map(v => v.date);
+    const pulseData = vHistory.map(v => parseInt(v.pulse) || null);
+    const sysData = [];
+    const diaData = [];
+    vHistory.forEach(v => {
+      if (v.bp && v.bp.includes('/')) {
+        const parts = v.bp.split('/');
+        sysData.push(parseInt(parts[0]) || null);
+        diaData.push(parseInt(parts[1]) || null);
+      } else {
+        sysData.push(null);
+        diaData.push(null);
+      }
+    });
+
+    new Chart(document.getElementById('vitalsChart'), {
+      type: 'line',
+      data: {
+        labels: vLabels,
+        datasets: [
+          {
+            label: 'Systolic BP (mmHg)',
+            data: sysData,
+            borderColor: '#ff4466',
+            borderWidth: 2,
+            pointRadius: 3,
+            fill: false,
+            tension: 0.1
+          },
+          {
+            label: 'Diastolic BP (mmHg)',
+            data: diaData,
+            borderColor: '#ffaa00',
+            borderWidth: 2,
+            pointRadius: 3,
+            fill: false,
+            tension: 0.1
+          },
+          {
+            label: 'Heart Rate (Pulse)',
+            data: pulseData,
+            borderColor: '#00ff88',
+            borderWidth: 2,
+            pointRadius: 3,
+            fill: false,
+            tension: 0.1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            labels: { color: '#9090aa', boxWidth: 8, font: { size: 9 } },
+            position: 'top'
+          }
+        },
+        scales: {
+          y: { grid: { color: '#2a2a42' }, ticks: { color: '#9090aa' } },
+          x: { grid: { color: 'transparent' }, ticks: { color: '#9090aa' } }
+        }
+      }
+    });
+
+    // 3. Diagnosis Distribution Doughnut Chart
+    const diagDist = stats.most_common_diagnoses || [];
+    const diagLabels = diagDist.map(d => d[0]);
+    const diagCounts = diagDist.map(d => d[1]);
+
+    new Chart(document.getElementById('diagnosisChart'), {
+      type: 'doughnut',
+      data: {
+        labels: diagLabels.length ? diagLabels : ['No active conditions'],
+        datasets: [{
+          data: diagCounts.length ? diagCounts : [1],
+          backgroundColor: ['#00d4ff', '#ff6600', '#00ff88', '#ffaa00', '#9090aa'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: { color: '#9090aa', font: { size: 9 }, boxWidth: 10 }
+          }
+        }
+      }
+    });
+
+    // 4. Severity Distribution Bar Chart
+    const sevData = stats.severity_distribution || {};
+    const sevLabels = ['Low', 'Medium', 'High', 'Critical'];
+    const sevCounts = [
+      sevData.low || 0,
+      sevData.medium || 0,
+      sevData.high || 0,
+      sevData.critical || 0
+    ];
+
+    new Chart(document.getElementById('severityChart'), {
+      type: 'bar',
+      data: {
+        labels: sevLabels,
+        datasets: [{
+          data: sevCounts,
+          backgroundColor: ['#00ff88', '#ffaa00', '#ff6600', '#ff4466'],
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { grid: { color: '#2a2a42' }, ticks: { color: '#9090aa', stepSize: 1 } },
+          x: { grid: { color: 'transparent' }, ticks: { color: '#9090aa' } }
+        }
+      }
+    });
     
   } catch(e) {
+    console.error('Error drawing summary charts:', e);
     content.innerHTML = '<div class="empty-state">Failed to load summary.</div>';
   }
 }
@@ -682,4 +841,37 @@ function setStatus(id, msg, type) {
 function autoResize(el) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+async function saveCurrentDraft(btn) {
+  if (!currentDraftConsultation) return;
+  
+  btn.disabled = true;
+  btn.textContent = 'Saving to History...';
+  
+  try {
+    const res = await apiFetch('/api/consultation/save', 'POST', currentDraftConsultation);
+    
+    // Replace the button area with download button and success msg
+    const actionsArea = btn.parentElement;
+    actionsArea.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <button class="pdf-btn" onclick="downloadPDF(${res.id})">
+          📄 Download PDF Report
+        </button>
+        <span style="color: var(--green); font-size: 13px; font-weight: 600;">✓ Saved to History</span>
+      </div>
+    `;
+    
+    // Clear draft
+    currentDraftConsultation = null;
+    
+    // Refresh history and summary lists
+    loadHistory();
+    loadSummary();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '📋 Add to History';
+    alert(e.error || 'Failed to save to history');
+  }
 }

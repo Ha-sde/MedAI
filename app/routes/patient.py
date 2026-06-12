@@ -75,6 +75,77 @@ def get_summary():
     for m in all_medications:
         med_freq[m] = med_freq.get(m, 0) + 1
     
+    # Build detailed vitals and health history
+    vitals_history = []
+    health_score_history = []
+    running_severity_counts = {'low': 0, 'medium': 0, 'high': 0, 'critical': 0}
+    
+    for idx, c in enumerate(consultations, 1):
+        c_date = c.date.strftime('%d %b') if c.date else f'Visit {idx}'
+        
+        # Vitals extraction
+        c_vitals = {}
+        if c.vitals:
+            try:
+                c_vitals = json.loads(c.vitals)
+            except: pass
+            
+        vitals_history.append({
+            'date': c_date,
+            'bp': c_vitals.get('bp', ''),
+            'pulse': c_vitals.get('pulse', ''),
+            'spo2': c_vitals.get('spo2', ''),
+            'temp': c_vitals.get('temp', '')
+        })
+        
+        # Health score tracking
+        if c.severity and c.severity in running_severity_counts:
+            running_severity_counts[c.severity] += 1
+            
+        score_so_far = _calculate_health_score(running_severity_counts, idx)
+        health_score_history.append({
+            'date': c_date,
+            'score': score_so_far
+        })
+        
+    # Generate clinical synthesis narrative in formal medical terms
+    unique_diags = list(set(all_diagnoses))
+    unique_syms = list(set(all_symptoms))
+    latest_c = consultations[-1]
+    
+    latest_vitals = {}
+    if latest_c.vitals:
+        try:
+            latest_vitals = json.loads(latest_c.vitals)
+        except: pass
+        
+    diag_summary = ", ".join(unique_diags[:3]) if unique_diags else "no active diagnostic classifications"
+    sym_summary = ", ".join(unique_syms[:4]) if unique_syms else "no chronic symptoms recorded"
+    
+    synthesis = f"Clinical Assessment: Patient {patient.name} ({patient.age or 'N/A'} yo {patient.gender or 'gender unspecified'}) "
+    synthesis += f"presents with {len(consultations)} consultations. Longitudinal records indicate history of: {diag_summary}. "
+    if unique_syms:
+        synthesis += f"Associated symptom markers: {sym_summary}. "
+    synthesis += f"During the latest encounter on {latest_c.date.strftime('%d-%b-%Y') if latest_c.date else 'recent checkup'}, "
+    synthesis += f"patient presented with: '{latest_c.chief_complaint or 'routine checkup'}' (Severity Index: '{latest_c.severity or 'medium'}'). "
+    
+    v_parts = []
+    if latest_vitals.get('bp'): v_parts.append(f"BP {latest_vitals.get('bp')} mmHg")
+    if latest_vitals.get('pulse'): v_parts.append(f"HR {latest_vitals.get('pulse')} bpm")
+    if latest_vitals.get('spo2'): v_parts.append(f"SpO2 {latest_vitals.get('spo2')}%")
+    if v_parts:
+        synthesis += f"Objective vitals at index encounter: {', '.join(v_parts)}. "
+        
+    synthesis += "\n\nRecommendations / Guidelines: "
+    if any(k in diag_summary.lower() for k in ['hypertension', 'heart', 'cardiac', 'blood pressure']):
+        synthesis += "Initiate routine metabolic panel and daily blood pressure logs. Recommend low-sodium diet, moderate aerobic exercises, and strict adherence to pharmacotherapy. Schedule cardiology follow-up if BP exceeds 140/90 mmHg."
+    elif any(k in diag_summary.lower() for k in ['arthritis', 'fracture', 'joint', 'back pain', 'knee', 'spine', 'bone', 'muscle']):
+        synthesis += "Maintain conservative orthopedic management. Initiate physical rehabilitation for joint range of motion (ROM) and structural offloading during acute flare-ups. Monitor analgesic usage."
+    elif any(k in diag_summary.lower() for k in ['asthma', 'bronchitis', 'pneumonia', 'lung']):
+        synthesis += "Recommend peak flow monitoring and check inhaler technique. Maintain active allergen avoidance and immunization schedule. Seek emergency care if SpO2 drops below 92%."
+    else:
+        synthesis += "Ensure regular clinical follow-ups. Monitor vital signs and maintain normal hydration. Follow up as symptoms evolve."
+        
     stats = {
         'total_visits': len(consultations),
         'first_visit': consultations[0].date.isoformat() if consultations[0].date else None,
@@ -86,7 +157,10 @@ def get_summary():
         'most_common_symptoms': sorted(sym_freq.items(), key=lambda x: x[1], reverse=True)[:5],
         'most_prescribed_medications': sorted(med_freq.items(), key=lambda x: x[1], reverse=True)[:5],
         'monthly_visits': monthly_visits,
-        'health_score': _calculate_health_score(severity_counts, len(consultations))
+        'health_score': _calculate_health_score(severity_counts, len(consultations)),
+        'vitals_history': vitals_history,
+        'health_score_history': health_score_history,
+        'clinical_synthesis': synthesis
     }
     
     return jsonify({

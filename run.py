@@ -9,4 +9,5 @@ app = create_app()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    socketio.run(app, host='0.0.0.0', port=port, debug=False)
+    debug_mode = os.environ.get('FLASK_DEBUG', '1') == '1'
+    socketio.run(app, host='0.0.0.0', port=port, debug=debug_mode, allow_unsafe_werkzeug=True)

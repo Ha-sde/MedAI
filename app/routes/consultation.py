@@ -68,30 +68,68 @@ def analyze_consultation():
     # Run LLM analysis
     analysis = analyze_transcript(transcript, history_data, attachments_analysis)
     
-    # Save consultation
+    result = {
+        'patient_id': patient_id,
+        'raw_transcript': transcript,
+        'chief_complaint': analysis.get('chief_complaint', ''),
+        'symptoms': analysis.get('symptoms', []),
+        'diagnosis': analysis.get('diagnosis', []),
+        'medications': analysis.get('medications', []),
+        'vitals': analysis.get('vitals', {}),
+        'lab_results': analysis.get('lab_results', {}),
+        'treatment_plan': analysis.get('treatment_plan', ''),
+        'follow_up': analysis.get('follow_up', ''),
+        'notes': analysis.get('notes', ''),
+        'severity': analysis.get('severity', 'medium'),
+        'ai_analysis': analysis.get('ai_analysis', ''),
+        'attachments': uploaded_files,
+        'doctor_name': doctor_name,
+        'attachments_analysis': attachments_analysis
+    }
+    
+    return jsonify(result), 200
+
+@consultation_bp.route('/save', methods=['POST'])
+@jwt_required()
+def save_consultation():
+    """Saves analyzed consultation to database and generates PDF."""
+    patient_id = int(get_jwt_identity())
+    patient = Patient.query.get(patient_id)
+    if not patient:
+        return jsonify({'error': 'Patient not found'}), 404
+        
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid request data'}), 400
+        
+    transcript = data.get('raw_transcript', '').strip()
+    if not transcript:
+        return jsonify({'error': 'Transcript is required'}), 400
+        
     import json as j
     consultation = Consultation(
         patient_id=patient_id,
         raw_transcript=transcript,
-        chief_complaint=analysis.get('chief_complaint', ''),
-        symptoms=j.dumps(analysis.get('symptoms', [])),
-        diagnosis=j.dumps(analysis.get('diagnosis', [])),
-        medications=j.dumps(analysis.get('medications', [])),
-        vitals=j.dumps(analysis.get('vitals', {})),
-        lab_results=j.dumps(analysis.get('lab_results', {})),
-        treatment_plan=analysis.get('treatment_plan', ''),
-        follow_up=analysis.get('follow_up', ''),
-        notes=analysis.get('notes', ''),
-        severity=analysis.get('severity', 'medium'),
-        ai_analysis=analysis.get('ai_analysis', ''),
-        attachments=j.dumps(uploaded_files),
-        doctor_name=doctor_name
+        chief_complaint=data.get('chief_complaint', ''),
+        symptoms=j.dumps(data.get('symptoms', [])),
+        diagnosis=j.dumps(data.get('diagnosis', [])),
+        medications=j.dumps(data.get('medications', [])),
+        vitals=j.dumps(data.get('vitals', {})),
+        lab_results=j.dumps(data.get('lab_results', {})),
+        treatment_plan=data.get('treatment_plan', ''),
+        follow_up=data.get('follow_up', ''),
+        notes=data.get('notes', ''),
+        severity=data.get('severity', 'medium'),
+        ai_analysis=data.get('ai_analysis', ''),
+        attachments=j.dumps(data.get('attachments', [])),
+        doctor_name=data.get('doctor_name', 'Dr. Attending')
     )
     
     db.session.add(consultation)
     db.session.flush()  # Get the ID
     
     # Generate PDF
+    upload_folder = current_app.config['UPLOAD_FOLDER']
     pdf_folder = os.path.join(upload_folder, 'reports')
     os.makedirs(pdf_folder, exist_ok=True)
     pdf_filename = f"report_{patient_id}_{consultation.id}.pdf"
@@ -102,12 +140,10 @@ def analyze_consultation():
         consultation.pdf_path = f"uploads/reports/{pdf_filename}"
     except Exception as e:
         print(f"[PDF Error] {e}")
-    
+        
     db.session.commit()
     
-    result = consultation.to_dict()
-    result['attachments_analysis'] = attachments_analysis
-    return jsonify(result), 201
+    return jsonify(consultation.to_dict()), 201
 
 @consultation_bp.route('/<int:consultation_id>', methods=['GET'])
 @jwt_required()
