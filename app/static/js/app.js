@@ -44,9 +44,14 @@ function showLoginStep(step) {
 }
 
 function navTo(view) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => {
+    v.classList.remove('active');
+    v.classList.add('hidden');
+  });
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById(`view-${view}`).classList.add('active');
+  const target = document.getElementById(`view-${view}`);
+  target.classList.remove('hidden');
+  target.classList.add('active');
   document.getElementById(`nav-${view}`).classList.add('active');
   if (view === 'history') loadHistory();
   if (view === 'summary') loadSummary();
